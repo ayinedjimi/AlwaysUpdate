@@ -582,6 +582,50 @@ echo;
 if %PRE% leq 4 %<%:6f " %MEDIA_LANGCODE% "%>>%  &  %<%:9f " %MEDIA_CFG% "%>>%  &  %<%:2f " %MEDIA_ARCH% "%>%
 echo;
 
+::# diagnostic info for troubleshooting
+echo;[%date% %time%] --- Diagnostic --- >> "%LOGFILE%"
+echo;[%date% %time%] Script: %~f0 >> "%LOGFILE%"
+echo;[%date% %time%] WorkDir: %CD% >> "%LOGFILE%"
+echo;[%date% %time%] PRESET=%PRESET% VER=%VER% VID=%VID% VIS=%VIS% >> "%LOGFILE%"
+echo;[%date% %time%] EXE=%EXE% >> "%LOGFILE%"
+echo;[%date% %time%] CAB=%CAB% FWLINK_MCT=%FWLINK_MCT% >> "%LOGFILE%"
+echo;[%date% %time%] Edition=%MEDIA_EDITION% Lang=%MEDIA_LANGCODE% Arch=%MEDIA_ARCH% >> "%LOGFILE%"
+%<%:8f " Preset: %PRESET% "%>>% & %<%:8f " Target: Windows %X% %VIS% "%>%
+echo;
+if "%LANG%"=="FR" (
+  %<%:8f " Script : %~f0 "%>%
+  %<%:8f " Dossier: %CD% "%>%
+) else (
+  %<%:8f " Script : %~f0 "%>%
+  %<%:8f " WorkDir: %CD% "%>%
+)
+echo;
+
+::# verify critical functions exist in script
+set "DIAG_OK=1"
+findstr /b /c:":DOWNLOAD" "%~f0" >nul 2>nul || (
+  %<%:4f " [ERREUR] Label :DOWNLOAD manquant dans le script "%>%
+  echo;[%date% %time%] FATAL: :DOWNLOAD label missing >> "%LOGFILE%"
+  set "DIAG_OK=0"
+)
+findstr /b /c:":PRODUCTS_XML" "%~f0" >nul 2>nul || (
+  %<%:4f " [ERREUR] Label :PRODUCTS_XML manquant dans le script "%>%
+  echo;[%date% %time%] FATAL: :PRODUCTS_XML label missing >> "%LOGFILE%"
+  set "DIAG_OK=0"
+)
+if "%DIAG_OK%"=="0" (
+  %<%:4f " Script corrompu - retelecharger depuis GitHub "%>%
+  echo;& pause & exit /b 1
+)
+
+::# verify PowerShell can execute embedded functions
+powershell -nop -ep bypass -c "exit 0" >nul 2>nul
+if %errorlevel% neq 0 (
+  %<%:4f " [ERREUR] PowerShell ne peut pas executer de scripts "%>%
+  echo;[%date% %time%] FATAL: PowerShell execution blocked >> "%LOGFILE%"
+  echo;& pause & exit /b 1
+)
+
 ::# download MCT and CAB/XML with progress
 %<%:6f " Downloading components... "%>%
 echo;[%date% %time%] Downloading MCT and product catalog >> "%LOGFILE%"
@@ -1212,6 +1256,7 @@ function MakeISO ($dir,$iso,$label='DVD_ROM') {if (!(test-path -Path $dir -patht
 } #:MakeISO:#
 
 ::--------------------------------------------------------------------------------------------------------------------------------
+:DOWNLOAD
 #:DOWNLOAD:# [PARAMS] "url" "file" [optional]"path"
 set ^ #=;$f0=[io.file]::ReadAllText($env:0); $0=($f0-split '#\:DOWNLOAD\:' ,3)[1]; $1=$env:1-replace'([`@$])','`$1'; iex($0+$1)
 set ^ #=& set "0=%~f0"& set 1=;DOWNLOAD %*& powershell -nop -ep bypass -c "%#%"& exit /b %errorlevel%
@@ -1258,6 +1303,7 @@ function DOWNLOAD ($u, $f, $p = (get-location).Path) {
 } #:DOWNLOAD:# Enhanced with retry, certutil fallback, logging - AlwaysUpdate v1.1
 
 ::--------------------------------------------------------------------------------------------------------------------------------
+:CHOICES
 #:CHOICES:#  [PARAMS] indexvar "c,h,o,i,c,e,s"  [OPTIONAL]  default-index "title" fontsize backcolor forecolor winsize
 set ^ #=;$f0=[io.file]::ReadAllText($env:0); $0=($f0-split '#\:CHOICES\:' ,3)[1]; $1=$env:1-replace'([`@$])','`$1'; iex($0+$1)
 set ^ #=&set "0=%~f0"& set 1=;CHOICES %*& (for /f %%x in ('powershell -nop -ep bypass -c "%#%"') do set "%1=%%x")& exit /b
@@ -1273,6 +1319,7 @@ function CHOICES ($index,$choices,$def=1,$title='Choices',[int]$sz=12,$bc='Midni
 } #:CHOICES:#
 
 ::--------------------------------------------------------------------------------------------------------------------------------
+:CHOICES2
 #:CHOICES2:#  [INTERNAL]
 set ^ #=;$f0=[io.file]::ReadAllText($env:0); $0=($f0-split '#\:CHOICES2\:' ,3)[1]; $1=$env:1-replace'([`@$])','`$1'; iex($0+$1)
 set ^ #=&set "0=%~f0"&set 1=;CHOICES2 %*&(for /f "tokens=1,2" %%x in ('powershell -nop -ep bypass -c "%#%"')do set %1=%%x&set %5=%%y)&exit /b
@@ -1284,6 +1331,7 @@ function CHOICES2 {iex($f0-split '#\:CHOICES\:' ,3)[1]; function :LOOP { $a=$arg
 } #:CHOICES2:#
 
 ::--------------------------------------------------------------------------------------------------------------------------------
+:PRODUCTS_XML
 #:PRODUCTS_XML:#
 set ^ #=;$f0=[io.file]::ReadAllText($env:0); $0=($f0-split '#\:PRODUCTS_XML\:' ,3)[1]; $1=$env:1-replace'([`@$])','`$1';iex($0+$1)
 set ^ #=& set "0=%~f0"& set 1=;PRODUCTS_XML %*& powershell -nop -ep bypass -c "%#%"& exit /b
