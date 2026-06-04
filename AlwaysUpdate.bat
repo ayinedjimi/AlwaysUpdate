@@ -1,38 +1,46 @@
 @echo off & goto :init
-:AlwaysUpdate v1.0 - Universal Windows Upgrade Tool
+:AlwaysUpdate v1.1 - Universal Windows Upgrade Tool
 ::===========================================================================
-::  AlwaysUpdate v1.0 - Universal Windows Upgrade Tool
+::  AlwaysUpdate v1.1 - Universal Windows Upgrade Tool
 ::  (c) 2026 Ayi NEDJIMI Consultants - https://ayinedjimi-consultants.fr
 ::  (c) 2026 Ayi NEDJIMI Consultants - Tous droits reserves
 ::
-::  Upgrades ANY Windows 10/11 to Windows 11 25H2 bypassing ALL hw checks
+::  Upgrades ANY Windows 10/11 to latest Windows 11 bypassing ALL hw checks
 ::  Nothing but Microsoft-hosted source links - no third-party tools
 ::
 ::  Enhancements over original: pre-flight checks, logging, progress bar,
-::  SHA1 verification, retry downloads, comprehensive hardware bypass,
+::  retry downloads, comprehensive hardware bypass,
 ::  24H2/25H2 support, full-auto mode, polished UI
 ::
-::  Changelog: 2026.03.28 v1.0 stable
+::  Changelog:
+::  2026.06.04 v1.1
+::  - Full auto mode defaults to latest available version (currently 24H2)
+::  - New catalog capture method: runs fwlink MCT briefly to obtain latest
+::    products catalog from Microsoft, replacing unreliable binary extraction
+::  - Download verification: reject 0-byte/incomplete downloads
+::  - Evaluation edition detection with user warning
+::  - Dynamic TargetReleaseVersionInfo in AutoUnattend.xml
+::  - Improved logging throughout
+::
+::  2026.03.28 v1.0 stable
 ::  - Initial release with all improvements
-::  - Full auto mode defaults to Windows 11 25H2
-::  - Uses 23H2 MCT (last without built-in TPM check) + extracted 25H2 catalog
+::  - Uses 23H2 MCT (last without built-in TPM check) + products catalog
 ::  - Comprehensive hardware bypass (TPM, SecureBoot, CPU, RAM, Storage)
 ::  - Real-time progress bar with status tracking
 ::  - Pre-flight system checks (disk, network, PS, processes)
-::  - Download integrity verification (SHA1)
 ::  - Detailed logging to %SystemDrive%\ESD\AlwaysUpdate.log
 ::===========================================================================
 
 ::# ======================== USER CONFIGURATION ========================
 :config
-::# Uncomment to skip GUI dialog - or rename script: "25H2 AlwaysUpdate.bat"
+::# Uncomment to skip GUI dialog - or rename script: "24H2 AlwaysUpdate.bat"
 rem set MCT=2510
 
-::# Uncomment to start auto upgrade directly (no prompts) to 25H2
+::# Uncomment to start auto upgrade directly (no prompts) to latest version
 ::# Or rename script: "auto AlwaysUpdate.bat"
 rem set /a AUTO=1
 
-::# Uncomment to start create iso directly - or rename: "iso 25H2 AlwaysUpdate.bat"
+::# Uncomment to start create iso directly - or rename: "iso 24H2 AlwaysUpdate.bat"
 rem set /a ISO=1
 
 ::# Uncomment to change autodetected MediaEdition
@@ -65,14 +73,14 @@ set /a UNHIDE_BUSINESS=1
 ::# Insert Enterprise esd links for older versions
 set /a INSERT_BUSINESS=1
 
-::# Version choice items and default [* 11_25H2]
-set VERSIONS=11_23H2,11_24H2,* 11_25H2
-set /a dV=3
+::# Version choice items and default [* 11_24H2]
+set VERSIONS=11_23H2,* 11_24H2,11_25H2
+set /a dV=2
 
 ::# Preset choice items and default [Manual select]
-set PRESETS=^&Full Auto 25H2,^&Auto Upgrade,Create ^&ISO,Create ^&USB,^&Manual Select,MCT ^&Default
+set PRESETS=^&Full Auto Upgrade,^&Auto Upgrade,Create ^&ISO,Create ^&USB,^&Manual Select,MCT ^&Default
 ::# 23H2 MCT is used for all versions (last MCT without built-in TPM check)
-::# For 24H2/25H2: products catalog is extracted from fwlink MCT, then 23H2 MCT runs with it
+::# For 24H2/25H2: catalog is captured by running the fwlink MCT briefly, then 23H2 MCT uses it
 set /a dP=5
 
 ::# ======================== END USER CONFIG ========================
@@ -99,7 +107,7 @@ if defined MCT if not defined VID set "MCT="
 for %%s in (%~n0 %*) do if /i %%s equ auto set /a AUTO=1
 if defined AUTO (set /a PRE=2 & if not defined MCT set /a MCT=%dV%)
 
-::# parse FULLAUTO from script name - Full Auto 25H2 preset
+::# parse FULLAUTO from script name - Full Auto Upgrade preset
 for %%s in (%~n0 %*) do if /i %%s equ fullauto set /a FULLAUTO=1
 if defined FULLAUTO (set /a AUTO=1& set /a PRE=1& set /a MCT=%dV%)
 
@@ -142,6 +150,18 @@ if defined ARCH (set MEDIA_ARCH=%ARCH%) else (set MEDIA_ARCH=%OS_ARCH%)
 if not defined VID (set VID=%OS_VID%)
 
 ::# edition fallback to ones that MCT supports (IoTEnterpriseS before IoTEnterprise)
+::# warn about Eval editions (licensing restrictions may prevent upgrade)
+echo;%OS_EDITION% | find /i "Eval" >nul 2>nul && (
+  echo;[%date% %time%] WARN: Evaluation edition detected: %OS_EDITION% >> "%LOGFILE%" 2>nul
+  if "%LANG%"=="FR" (
+    %<%:4f " [AVIS] Edition Evaluation detectee: %OS_EDITION% "%>%
+    %<%:3f "        La mise a niveau peut echouer ou produire une installation non activee "%>%
+  ) else (
+    %<%:4f " [NOTE] Evaluation edition detected: %OS_EDITION% "%>%
+    %<%:3f "        Upgrade may fail or produce an unlicensed installation "%>%
+  )
+  echo;
+)
 (set MEDIA_EDITION=%MEDIA_EDITION:Eval=%)
 (set MEDIA_EDITION=%MEDIA_EDITION:Embedded=Enterprise%)
 (set MEDIA_EDITION=%MEDIA_EDITION:IoTEnterpriseS=Enterprise%)
@@ -156,7 +176,7 @@ for %%s in (%*) do for %%P in (1 2 3 4 5 6) do if %%~ns gtr 0 if %%~ns lss 4 if 
 %<%:6f " %MEDIA_LANGCODE% "%>>%  &  %<%:9f " %MEDIA_EDITION% "%>>%  &  %<%:2f " %MEDIA_ARCH% "%>%
 echo;
 if "%LANG%"=="FR" (
-%<%:1f " 1  Full Auto 25H2    Mise a niveau vers Windows 11 25H2 - SANS INTERACTION       "%>%
+%<%:1f " 1  Full Auto         Mise a niveau vers la derniere version - SANS INTERACTION    "%>%
 %<%:1f " 2  Mise a niveau     Upgrade assistee vers la version selectionnee                "%>%
 %<%:1f " 3  Creer ISO         Telecharge et cree un fichier ISO dans C:\ESD                "%>%
 %<%:1f " 4  Creer USB         Telecharge et cree une cle USB bootable                     "%>%
@@ -166,7 +186,7 @@ echo;
 %<%:17 " Bypass complet : TPM, SecureBoot, CPU, RAM, Stockage                             "%>%
 %<%:17 " Renommer en "%>>% & %<%:1f "def AlwaysUpdate.bat"%>>% & %<%:17 " pour un media sans modification             "%>%
 ) else (
-%<%:1f " 1  Full Auto 25H2    Upgrade to Windows 11 25H2 - NO PROMPTS                     "%>%
+%<%:1f " 1  Full Auto         Upgrade to latest Windows 11 version - NO PROMPTS            "%>%
 %<%:1f " 2  Auto Upgrade      Assisted upgrade to selected version                        "%>%
 %<%:1f " 3  Create ISO        Download and create ISO file in C:\ESD                       "%>%
 %<%:1f " 4  Create USB        Download and create bootable USB drive                      "%>%
@@ -184,9 +204,9 @@ if %MCT%0 gtr 1 if %PRE%0 lss 1 call :choices PRE "%PRESETS%"  %dP% "AlwaysUpdat
 if %MCT%0 gtr 1 if %PRE%0 lss 1 goto choice-0 = cancel
 goto choice-%MCT%
 
-::# ----------- VERSION DEFINITIONS (23H2, 24H2, *25H2) -----------
+::# ----------- VERSION DEFINITIONS (23H2, *24H2, 25H2) -----------
 ::# 23H2 MCT EXE is used for ALL versions (last MCT without built-in TPM check)
-::# For 24H2/25H2: products catalog extracted from fwlink MCT, then run with 23H2 MCT
+::# For 24H2/25H2: catalog captured by running fwlink MCT briefly, then 23H2 MCT uses it
 
 :choice-3
 set "VER=26200" & set "VID=11_25H2" & set "CB=26200.1000.250315-1200.25h2_release" & set "CT=2026/03/" & set "CC=2.0"
@@ -214,7 +234,7 @@ set /a MCT=%dv% & set /a PRE=%dP% & goto choice-%dV%
 
 ::# ======================== CONSOLE INIT ========================
 :init
-@echo off& title AlwaysUpdate v1.0& set __COMPAT_LAYER=Installer& chcp 437 >nul& set set=& for %%s in (%*) do if /i %%s equ set (set set=1)
+@echo off& title AlwaysUpdate v1.1& set __COMPAT_LAYER=Installer& chcp 437 >nul& set set=& for %%s in (%*) do if /i %%s equ set (set set=1)
 if not defined set set /a BackClr=0x1 & set /a TextClr=0xf & set /a Columns=32 & set /a Lines=120 & set /a Buff=9999
 if not defined set set /a SColors=BackClr*16+TextClr & set /a WSize=Columns*256*256+Lines & set /a BSize=Buff*256*256+Lines
 if not defined set for %%s in ("HKCU\Console\AlwaysUpdate") do (
@@ -263,7 +283,7 @@ echo;
 for /f "delims=:" %%s in ('echo;prompt $h$s$h:^|cmd /d') do set "|=%%s"&set ">>=\..\c nul&set /p s=%%s%%s%%s%%s%%s%%s%%s<nul&popd"
 set "<=pushd "%WORK%"&2>nul findstr /c:\ /a" &set ">=%>>%&echo;" &set "|=%|:~0,1%" &set /p s=\<nul>"%WORK%\c"
 ::# init log
-echo;[%date% %time%] === AlwaysUpdate v1.0 Started === >> "%LOGFILE%" 2>nul
+echo;[%date% %time%] === AlwaysUpdate v1.1 Started === >> "%LOGFILE%" 2>nul
 ::# undefine main variables
 for %%s in (OPTIONS MCT XML CAB EXE VID PRE AUTO FULLAUTO ISO EDITION KEY ARCH LANGCODE NO_UPDATE DEF AKEY FWLINK_MCT) do set "%%s="
 for %%s in (latest_AlwaysUpdate.url) do if not exist %%s (echo;[InternetShortcut]&echo;URL=https://ayinedjimi-consultants.fr)>%%s
@@ -475,7 +495,7 @@ call :preflight
 if %errorlevel% neq 0 exit /b 1
 if %PRE%0 lss 1 goto choice-0
 
-if %PRE% equ 1 (set "PRESET=Full Auto 25H2" & set /a AUTO=1)
+if %PRE% equ 1 (set "PRESET=Full Auto Upgrade" & set /a AUTO=1)
 if %PRE% equ 2 (set "PRESET=Auto Upgrade")
 if %PRE% equ 3 (set "PRESET=Auto ISO")
 if %PRE% equ 4 (set "PRESET=Auto USB")
@@ -554,7 +574,7 @@ if %VER% geq 26200 (set X=11& set VIS=25H2)
 cls
 echo;
 echo;  ===========================================================================
-echo;  AlwaysUpdate v1.0 - (c) 2026 Ayi NEDJIMI Consultants
+echo;  AlwaysUpdate v1.1 - (c) 2026 Ayi NEDJIMI Consultants
 echo;  https://ayinedjimi-consultants.fr
 echo;  ===========================================================================
 echo;
@@ -569,22 +589,28 @@ if defined EXE echo;%EXE% & call :DOWNLOAD "%EXE%" MediaCreationTool%VID%.exe
 if defined XML echo;%XML% & call :DOWNLOAD "%XML%" products%VID%.xml
 if defined CAB echo;%CAB% & call :DOWNLOAD "%CAB%" products%VID%.cab
 
-::# For 24H2/25H2: extract products catalog from fwlink MCT (newer MCT has built-in TPM check)
+::# For 24H2/25H2: obtain products catalog by running fwlink MCT briefly
+::# The fwlink MCT downloads the latest catalog from Microsoft on startup,
+::# before any hardware checks. We capture it and kill the MCT.
 set "FALLBACK_CAB=https://download.microsoft.com/download/6/2/b/62b47bc5-1b28-4bfa-9422-e7a098d326d4/products_win11_20231208.cab"
 if defined FWLINK_MCT if not defined CAB (
-  %<%:6f " Extracting products catalog from latest MCT... "%>%
-  echo;[%date% %time%] Downloading fwlink MCT for catalog extraction >> "%LOGFILE%"
+  %<%:6f " Obtaining latest products catalog from Microsoft... "%>%
+  echo;[%date% %time%] Downloading fwlink MCT to obtain catalog >> "%LOGFILE%"
   call :DOWNLOAD "%FWLINK_MCT%" MCT_fwlink.exe
   if exist MCT_fwlink.exe (
-    set "0=%~f0"& powershell -nop -ep bypass -c "iex ([io.file]::ReadAllText($env:0) -split '[:]extract_products_cab')[1];"
+    set "0=%~f0"& powershell -nop -ep bypass -c "iex ([io.file]::ReadAllText($env:0) -split '[:]capture_products_catalog')[1];"
     del /f /q MCT_fwlink.exe >nul 2>nul
   )
   if exist products.xml (
-    %<%:2f " Products catalog extracted successfully "%>%
-    echo;[%date% %time%] Products catalog extracted from fwlink MCT >> "%LOGFILE%"
+    %<%:2f " Products catalog obtained successfully "%>%
+    echo;[%date% %time%] Products catalog captured from fwlink MCT >> "%LOGFILE%"
   ) else (
-    %<%:3f " [WARN] "%>>% & %<%:0f " Catalog extraction failed - falling back to 23H2 catalog "%>%
-    echo;[%date% %time%] WARN: Catalog extraction failed, using 23H2 fallback >> "%LOGFILE%"
+    if "%LANG%"=="FR" (
+      %<%:3f " [WARN] "%>>% & %<%:0f " Catalogue non obtenu - fallback sur le catalogue 23H2 "%>%
+    ) else (
+      %<%:3f " [WARN] "%>>% & %<%:0f " Catalog not obtained - falling back to 23H2 catalog "%>%
+    )
+    echo;[%date% %time%] WARN: Catalog capture failed, using 23H2 fallback >> "%LOGFILE%"
     call :DOWNLOAD "%FALLBACK_CAB%" products%VID%.cab
   )
 )
@@ -670,13 +696,13 @@ EXIT
 ::# ======================== ASSISTED MCT (PowerShell) ========================
 ::--------------------------------------------------------------------------------------------------------------------------------
 :Assisted_MCT
-#:: AlwaysUpdate v1.0 - Enhanced Assisted MCT with progress bar
- $host.ui.rawui.windowtitle = "AlwaysUpdate v1.0 - $env:PRESET $env:X $env:DEF"; $ErrorActionPreference = 0
+#:: AlwaysUpdate v1.1 - Enhanced Assisted MCT with progress bar
+ $host.ui.rawui.windowtitle = "AlwaysUpdate v1.1 - $env:PRESET $env:X $env:DEF"; $ErrorActionPreference = 0
  [io.path]::GetTempPath(),$env:TEMP,$env:TMP |% { if ($env:ROOT -like "*$_*") {$env:ROOT=$env:WORK} }
  $DRIVE = [environment]::SystemDirectory[0]; $WD = $DRIVE+':\ESD'; $WS = $DRIVE+':\$WINDOWS.~WS\Sources'; $DIR = $WS+'\Windows'
  $ESD = $null; $USB = $null; $ISO = "$env:ROOT\$env:X $env:VIS $env:MEDIA_CFG $env:MEDIA_ARCH $env:MEDIA_LANGCODE.iso"
  $LOGFILE = $env:LOGFILE
- if ('Auto Upgrade' -eq $env:PRESET -or 'Full Auto 25H2' -eq $env:PRESET) {$ISO = [io.path]::GetTempPath() + "~temporary.iso"}
+ if ('Auto Upgrade' -eq $env:PRESET -or 'Full Auto Upgrade' -eq $env:PRESET) {$ISO = [io.path]::GetTempPath() + "~temporary.iso"}
  del $ISO -force -ea 0 >$null
  if (test-path $ISO) {write-host " ERROR! " -fore Red -nonew; write-host "$ISO is read-only or in use`r`n"; sleep 5; return}
  cd -Lit("$env:WORK\MCT")
@@ -689,7 +715,7 @@ EXIT
    $bar = '#' * $filled + '-' * $empty
    $line = ("`r  [$bar] {0,3}% - $status" -f $pct).PadRight(120)
    write-host -nonew -fore $color $line
-   Write-Progress -Activity "AlwaysUpdate v1.0" -Status $status -PercentComplete $pct
+   Write-Progress -Activity "AlwaysUpdate v1.1" -Status $status -PercentComplete $pct
    if ($pct -ne $script:lastLoggedPct) {
      Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] Progress: $pct% - $status"
      $script:lastLoggedPct = $pct
@@ -758,7 +784,7 @@ EXIT
 
    Show-ProgressBar 20 "MCT configured, preparing download..."
 
-   if ($null -ne $env:DEF -and 'Auto Upgrade' -ne $env:PRESET -and 'Full Auto 25H2' -ne $env:PRESET) {break :mct}
+   if ($null -ne $env:DEF -and 'Auto Upgrade' -ne $env:PRESET -and 'Full Auto Upgrade' -ne $env:PRESET) {break :mct}
 
   #:: get target from state file (timeout: 10 min)
    $ready = $false; $task = "PreDownload"; $action = "GetWebSetupUserInput"; $timeout = [datetime]::Now.AddMinutes(10)
@@ -774,9 +800,9 @@ EXIT
    }
 
    if ($mct.HasExited) {break :mct}
-   if ('Auto Upgrade' -ne $env:PRESET -and 'Full Auto 25H2' -ne $env:PRESET -and $null -eq $USB) {write-host "`n"; Show-ProgressBar 25 "Target: $ISO"}
-   if ('Auto Upgrade' -ne $env:PRESET -and 'Full Auto 25H2' -ne $env:PRESET -and $null -ne $USB) {write-host "`n"; Show-ProgressBar 25 "Target: $USB"}
-   if ('Auto Upgrade' -eq $env:PRESET -or 'Full Auto 25H2' -eq $env:PRESET) {write-host "`n"; Show-ProgressBar 25 "Preparing upgrade media..."}
+   if ('Auto Upgrade' -ne $env:PRESET -and 'Full Auto Upgrade' -ne $env:PRESET -and $null -eq $USB) {write-host "`n"; Show-ProgressBar 25 "Target: $ISO"}
+   if ('Auto Upgrade' -ne $env:PRESET -and 'Full Auto Upgrade' -ne $env:PRESET -and $null -ne $USB) {write-host "`n"; Show-ProgressBar 25 "Target: $USB"}
+   if ('Auto Upgrade' -eq $env:PRESET -or 'Full Auto Upgrade' -eq $env:PRESET) {write-host "`n"; Show-ProgressBar 25 "Preparing upgrade media..."}
    $label = "${env:X}_${env:VIS}" + ($ESD -split '(?=_client)')[1]
    $label = $label -replace '_clientconsumer','' -replace '_clientbusiness','' -replace 'fre_','_' -replace '.esd',''
    sleep 10; powershell -win $env:hide -nop -c ";"
@@ -853,7 +879,7 @@ EXIT
    }
 
   #:: kill MCT before temporary iso finish (for Win11 or Auto Upgrade)
-   if ($env:VER -ge 22000 -or 'Auto Upgrade' -eq $env:PRESET -or 'Full Auto 25H2' -eq $env:PRESET) {
+   if ($env:VER -ge 22000 -or 'Auto Upgrade' -eq $env:PRESET -or 'Full Auto Upgrade' -eq $env:PRESET) {
      $mct.Kill(); $s = get-process SetupPrep,SetupHost -ea 0; if ($s) { foreach ($setup in $s) {$setup.Kill()} }
      powershell -win 0 -nop -c ";"; ShowWindow (get-process -Id $PID).MainWindowHandle 1
      sleep 3; cmd /d /x /c "dism /cleanup-wim >nul 2>nul"; del $ISO -force -ea 0 >$null
@@ -887,8 +913,8 @@ EXIT
    Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] Applied appraiserres.dll bypass"
  }
 
-#:: Auto Upgrade / Full Auto 25H2
- if ('Auto Upgrade' -eq $env:PRESET -or 'Full Auto 25H2' -eq $env:PRESET) {
+#:: Auto Upgrade / Full Auto Upgrade
+ if ('Auto Upgrade' -eq $env:PRESET -or 'Full Auto Upgrade' -eq $env:PRESET) {
    Show-ProgressBar 92 "Starting auto upgrade..."
    cd -Lit("$env:WORK\MCT"); cmd /d /x /c "call ""$env:WORK\MCT\auto.cmd"" ""$DIR"""; sleep 7; return
  }
@@ -930,11 +956,11 @@ EXIT
 
  Show-ProgressBar 100 "COMPLETE!"
  write-host -fore Green "`r`n`n DONE! " -nonew
- write-host "AlwaysUpdate v1.0 - Operation completed successfully"
+ write-host "AlwaysUpdate v1.1 - Operation completed successfully"
  write-host " Log saved to: $LOGFILE"
  write-host " (c) 2026 Ayi NEDJIMI Consultants - https://ayinedjimi-consultants.fr`r`n"
  Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] === AlwaysUpdate completed successfully ==="
- Write-Progress -Activity "AlwaysUpdate v1.0" -Completed
+ Write-Progress -Activity "AlwaysUpdate v1.1" -Completed
  sleep 7; return
 #:: done #:Assisted_MCT
 
@@ -1152,7 +1178,7 @@ function WIM_INFO ($file = 'install.esd', $index = 0, $out = 0) { :info while ($
   </component></settings>
 </unattend>
 
-'@; [io.file]::WriteAllText('AutoUnattend.xml', $text); #:generate_AutoUnattend_xml
+'@; if ($env:VIS) {$text = $text -replace 'TargetReleaseVersionInfo /d 25H2','TargetReleaseVersionInfo /d '+$env:VIS}; [io.file]::WriteAllText('AutoUnattend.xml', $text); #:generate_AutoUnattend_xml
 
 ::--------------------------------------------------------------------------------------------------------------------------------
 :reg_query [USAGE] call :reg_query "HKCU\Volatile Environment" Value variable
@@ -1213,10 +1239,13 @@ function DOWNLOAD ($u, $f, $p = (get-location).Path) {
       write-host -nonew -fore Gray "`r  Attempt $($retry+1)/$maxRetry - certutil... "
       try {certutil -urlcache -split -f $url $file 2>$null} catch {}
     }
-    if (([IO.FileInfo]$file).Exists) {
-      write-host -fore Green "`r  Downloaded: $f                                            "
-      Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] Downloaded: $f"
+    if (([IO.FileInfo]$file).Exists -and ([IO.FileInfo]$file).Length -gt 0) {
+      $dlSize = [math]::Round(([IO.FileInfo]$file).Length/1KB, 0)
+      write-host -fore Green "`r  Downloaded: $f (${dlSize} KB)                              "
+      Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] Downloaded: $f (${dlSize} KB)"
       return
+    } elseif (([IO.FileInfo]$file).Exists -and ([IO.FileInfo]$file).Length -eq 0) {
+      Remove-Item $file -Force -ea 0
     }
     $retry++
     if ($retry -lt $maxRetry) {
@@ -1226,7 +1255,7 @@ function DOWNLOAD ($u, $f, $p = (get-location).Path) {
   }
   write-host -fore Red "`r  FAILED: $f download failed after $maxRetry attempts       "
   Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] FAILED: $f download failed"
-} #:DOWNLOAD:# Enhanced with retry, certutil fallback, logging - AlwaysUpdate v1.0
+} #:DOWNLOAD:# Enhanced with retry, certutil fallback, logging - AlwaysUpdate v1.1
 
 ::--------------------------------------------------------------------------------------------------------------------------------
 #:CHOICES:#  [PARAMS] indexvar "c,h,o,i,c,e,s"  [OPTIONAL]  default-index "title" fontsize backcolor forecolor winsize
@@ -1361,27 +1390,39 @@ function PRODUCTS_XML { [xml]$xml = [io.file]::ReadAllText("$pwd\products.xml",[
 } #:PRODUCTS_XML:#
 
 ::--------------------------------------------------------------------------------------------------------------------------------
-:extract_products_cab $exePath = "$pwd\MCT_fwlink.exe"
- $bytes = [IO.File]::ReadAllBytes($exePath); $enc = [Text.Encoding]::GetEncoding(28591)
- $str = $enc.GetString($bytes); $pos = 0; $found = @()
- while (($idx = $str.IndexOf('MSCF', $pos)) -ge 0) {
-   try { $sz = [BitConverter]::ToUInt32($bytes, $idx + 8)
-     if ($sz -gt 5000 -and $sz -lt 500000 -and ($idx + $sz) -le $bytes.Length) {
-       $found += @{Offset=$idx; Size=[int]$sz}
-   }} catch {}; $pos = $idx + 4
- }
- $ok = $false
- for ($fi = $found.Count - 1; $fi -ge 0 -and -not $ok; $fi--) {
-   $best = $found[$fi]; $cab = New-Object byte[] $best.Size
-   [Array]::Copy($bytes, $best.Offset, $cab, 0, $best.Size)
-   [IO.File]::WriteAllBytes("$pwd\products.cab", $cab)
-   expand.exe -R "$pwd\products.cab" -F:* "$pwd" >$null 2>&1
-   if (Test-Path "$pwd\products.xml") {
-     write-host " Catalog extracted ($($best.Size) bytes from CAB #$($found.Count - $fi))" -fore Gray; $ok = $true
+:capture_products_catalog
+#:: Run the fwlink MCT briefly to let it download the latest catalog from Microsoft.
+#:: The MCT downloads products.cab/xml to C:\$WINDOWS.~WS\Sources\ before hardware checks.
+ $LOGFILE = $env:LOGFILE; $exePath = "$pwd\MCT_fwlink.exe"
+ Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] Starting fwlink MCT to capture catalog..."
+ $WS = [environment]::SystemDirectory[0] + ':\$WINDOWS.~WS\Sources'
+ $proc = Start-Process -FilePath $exePath -PassThru -WorkingDirectory $pwd
+ if ($null -eq $proc) { write-host " WARN: failed to start MCT" -fore Yellow; return }
+ $ok = $false; $timeout = 90
+ for ($i = 0; $i -lt $timeout; $i += 2) {
+   Start-Sleep -Seconds 2
+   if (Test-Path "$WS\products.xml") {
+     $xmlSize = (Get-Item "$WS\products.xml").Length
+     if ($xmlSize -gt 1000) {
+       Copy-Item "$WS\products.xml" "$pwd\products.xml" -Force
+       Copy-Item "$WS\products.cab" "$pwd\products.cab" -Force -ea 0
+       write-host " Catalog captured ($xmlSize bytes in ${i}s)" -fore Gray
+       Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] Catalog captured: $xmlSize bytes after ${i}s"
+       $ok = $true; break
+     }
+   }
+   if ($proc.HasExited) {
+     Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] MCT exited (code $($proc.ExitCode)) after ${i}s"
+     break
    }
  }
- if (-not $ok) { write-host " WARN: no products.xml found in MCT binary" -fore Yellow }
-#:extract_products_cab
+ try { if (-not $proc.HasExited) { $proc.Kill() } } catch {}
+ Get-Process "SetupHost","SetupPrep" -ea 0 | Stop-Process -Force -ea 0
+ if (-not $ok) {
+   write-host " WARN: catalog capture timed out (${timeout}s)" -fore Yellow
+   Add-Content $LOGFILE "[$(Get-Date -f 'yyyy-MM-dd HH:mm:ss')] WARN: catalog capture timed out"
+ }
+#:capture_products_catalog
 
 ::--------------------------------------------------------------------------------------------------------------------------------
 ::# ESD CSV data for INSERT_BUSINESS feature (versions 14393, 15063, 18363, 19041, 19042, 19043)
