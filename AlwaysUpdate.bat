@@ -328,15 +328,36 @@ if %TEMP_GB%0 lss 80 (
   echo;[%date% %time%] OK: TEMP drive %TEMP_GB% GB free >> "%LOGFILE%"
 )
 
-::# Check 4: Internet connectivity
-ping -n 1 -w 3000 download.microsoft.com >nul 2>nul
-if %errorlevel% neq 0 (
-  %<%:4f " [FAIL] "%>>% & %<%:0f " Cannot reach download.microsoft.com - check internet "%>%
-  echo;[%date% %time%] FAIL: No internet connectivity >> "%LOGFILE%"
+::# Check 4: Internet connectivity and DNS
+set "NET_OK=0"
+ping -n 1 -w 3000 download.microsoft.com >nul 2>nul && set "NET_OK=1"
+if "%NET_OK%"=="0" ping -n 1 -w 3000 8.8.8.8 >nul 2>nul && set "NET_OK=2"
+if "%NET_OK%"=="0" (
+  %<%:4f " [FAIL] "%>>% & %<%:0f " No network connectivity - check internet connection "%>%
+  echo;[%date% %time%] FAIL: No network at all (ping 8.8.8.8 + download.microsoft.com failed) >> "%LOGFILE%"
   set /a PREFLIGHT_OK=0
+) else if "%NET_OK%"=="2" (
+  %<%:3f " [WARN] "%>>% & %<%:0f " DNS issue: 8.8.8.8 OK but download.microsoft.com unreachable "%>%
+  echo;[%date% %time%] WARN: DNS or proxy issue - can ping 8.8.8.8 but not download.microsoft.com >> "%LOGFILE%"
+  %<%:3f "        "%>>% & %<%:0f " Check: DNS, proxy, firewall, WSUS blocking Microsoft CDN "%>%
 ) else (
   %<%:2f " [ OK ] "%>>% & %<%:0f " Internet connectivity verified "%>%
   echo;[%date% %time%] OK: Internet reachable >> "%LOGFILE%"
+)
+
+::# Check 4b: Test actual HTTPS download capability
+set "HTTPS_OK=0"
+powershell -nop -ep bypass -c "try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$r=[Net.WebRequest]::Create('https://download.microsoft.com').GetResponse();$r.Close();exit 0}catch{Write-Host $_.Exception.Message;exit 1}" >nul 2>nul && set "HTTPS_OK=1"
+if "%HTTPS_OK%"=="0" (
+  %<%:3f " [WARN] "%>>% & %<%:0f " HTTPS to download.microsoft.com failed - check proxy/TLS/firewall "%>%
+  echo;[%date% %time%] WARN: HTTPS test failed to download.microsoft.com >> "%LOGFILE%"
+  for /f "tokens=*" %%a in ('powershell -nop -ep bypass -c "try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;(Invoke-WebRequest 'https://download.microsoft.com' -UseBasicParsing -TimeoutSec 5).StatusCode}catch{$_.Exception.Message}"') do (
+    echo;[%date% %time%] HTTPS detail: %%a >> "%LOGFILE%"
+    %<%:3f "        "%>>% & %<%:0f " Detail: %%a "%>%
+  )
+) else (
+  %<%:2f " [ OK ] "%>>% & %<%:0f " HTTPS download capability verified "%>%
+  echo;[%date% %time%] OK: HTTPS to download.microsoft.com works >> "%LOGFILE%"
 )
 
 ::# Check 5: PowerShell version and execution policy
